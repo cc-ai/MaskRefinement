@@ -67,7 +67,7 @@ for mask_file in tqdm(mask_files):
     #Iterate through all pixels and calculate distances
     for x in range(mask.shape[0]):
         for y in range(mask.shape[1]):
-            dist = cv.pointPolygonTest(cnt,(y,x),True) 
+            dist = cv.pointPolygonTest(cnt,(y,x),True)
             norm_dist = dist / hyp_length
             if norm_dist < 0:
                 norm_dist = -norm_dist
