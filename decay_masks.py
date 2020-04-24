@@ -4,68 +4,33 @@ import math
 import os
 from pathlib import Path
 from tqdm import tqdm
-
-# Larger number -> faster decay
-constant = 100
-
-save_dir = Path("./new_masks_closed")
-imgs_path = Path("/network/tmp1/ccai/MUNITfilelists/trainA.txt")
-masks_path = Path("/network/tmp1/ccai/MUNITfilelists/seg_trainA.txt")
-img_files = []
-mask_files = []
-
-if not os.path.isdir(save_dir):
-    os.mkdir(save_dir)
-
-with open(imgs_path) as f:
-    for line in f:
-        img_files.append(line.rstrip())
-with open(masks_path) as f:
-    for line in f:
-        mask_files.append(line.rstrip())
-
-
-def padd(mask, step=1, decay=0.8):
-    # v = int(decay * mask[i, j])
-    m = mask.copy()
-    v = min([k for k in np.unique(m) if k != 0])
-    zero = np.zeros_like(mask)
-    nw = np.where(mask == v)
-    nw = [loc for loc in zip(nw[0], nw[1])]
-    print(v)
-
-    imax = len(mask) - 1 - step
-    jmax = mask.shape[1] - 1 - step
-    imin = jmin = step
-
-    xm_y = np.array([(i, j - step) for i, j in nw if j >= jmin]).T
-    xp_y = np.array([(i, j + step) for i, j in nw if j <= jmax]).T
-    x_ym = np.array([(i - step, j) for i, j in nw if i >= imin]).T
-    x_yp = np.array([(i + step, j) for i, j in nw if i <= imax]).T
-
-    xp_yp = np.array([(i + step, j + step) for i, j in nw if j <= jmax and i <= imax]).T
-    xm_yp = np.array([(i + step, j - step) for i, j in nw if j >= jmin and i <= imax]).T
-    xp_ym = np.array([(i - step, j + step) for i, j in nw if j <= jmax and i >= imin]).T
-    xm_ym = np.array([(i - step, j - step) for i, j in nw if j >= jmin and i >= imin]).T
-
-    all_locs = [x_ym, x_yp, xm_y, xp_y, xm_ym, xp_ym, xm_yp, xp_yp]
-    for i, xy in enumerate(all_locs):
-        if len(xy):
-            zero[tuple(xy)] = int(v * decay)
-    zero *= (mask == 0).astype(np.uint8)
-    m += zero
-    return m
-
-
-def padd_all(mask, step=1, decay=0.8):
-    m = mask.copy()
-    for i in range(1, step + 1):
-        m = padd(m, 1, decay ** i)
-    return m
-
+from time import time
 
 if __name__ == "__main__":
+
+    # Larger number -> faster decay
+    constant = 100
+    margin = 50
+
+    save_dir = Path("./new_masks_closed")
+    imgs_path = Path("/network/tmp1/ccai/MUNITfilelists/trainA.txt")
+    masks_path = Path("/network/tmp1/ccai/MUNITfilelists/seg_trainA.txt")
+    img_files = []
+    mask_files = []
+
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
+
+    with open(imgs_path) as f:
+        for line in f:
+            img_files.append(line.rstrip())
+
+    with open(masks_path) as f:
+        for line in f:
+            mask_files.append(line.rstrip())
+    times = []
     for mask_file in tqdm(mask_files):
+        stime = time()
         # Read in "random" mask
         mask_file = Path(mask_file)
         mask = cv.imread(str(mask_file), 0)
@@ -103,28 +68,32 @@ if __name__ == "__main__":
         hyp_length = math.sqrt(mask.shape[0] ** 2 + mask.shape[1] ** 2)
         cnt = contours[max_idx]
         smooth_mask = np.zeros(mask.shape)
-        print(mask_file)
-        print(mask_file)
+        # print(mask_file)
         # Iterate through all pixels and calculate distances
         ys, xs = np.where(mask == 0)
+        ys = set(ys)
+        xs = set(xs)
         max_y_dist = 50
-        # y_ref = cnt[:, 0, 0].min()
-        locs = [
-            (i, j)
-            for i, j in zip(ys, xs)
-            # if i - y_ref < max_y_dist
-        ]
-        # for x in range(mask.shape[0]):
-        #     for y in range(mask.shape[1]):
-        for i, j in locs:
-            dist = cv.pointPolygonTest(cnt, (i, j), True)
-            norm_dist = dist / hyp_length
-            if norm_dist < 0:
-                norm_dist = -norm_dist
-                mask_value = int(255 * math.exp(-constant * norm_dist))
-                smooth_mask[j, i] = mask_value
+        y_ref_min = max((cnt[:, 0, 1].min() - margin, 0))
+        y_ref_max = min((cnt[:, 0, 1].max() + margin, mask.shape[0]))
+        x_ref_min = max((cnt[:, 0, 0].min() - margin, 0))
+        x_ref_max = min((cnt[:, 0, 0].max() + margin, mask.shape[1]))
+
+        for i in range(y_ref_min, y_ref_max):
+            if i not in ys:
+                continue
+            for j in range(x_ref_min, x_ref_max):
+                if j not in xs:
+                    continue
+                # for i, j in locs:
+                dist = cv.pointPolygonTest(cnt, (j, i), True)
+                norm_dist = dist / hyp_length
+                if norm_dist < 0:
+                    norm_dist = -norm_dist
+                    mask_value = int(255 * math.exp(-constant * norm_dist))
+                    smooth_mask[i, j] = mask_value
 
         smooth_mask = smooth_mask + mask
 
         cv.imwrite(str(save_dir / mask_file.name), smooth_mask)
-        break
+        times.append(time() - stime)
