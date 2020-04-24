@@ -1,10 +1,8 @@
 import numpy as np
 import cv2 as cv
 import math
-import os
 from pathlib import Path
 from tqdm import tqdm
-from time import time
 
 if __name__ == "__main__":
 
@@ -30,9 +28,10 @@ if __name__ == "__main__":
         for line in f:
             mask_files.append(line.rstrip())
 
+    total_masks = len(mask_files)
     mask_files = map(Path, mask_files)
 
-    for mask_file in tqdm(mask_files):
+    for mask_file in tqdm(mask_files, total=total_masks):
         # Read in "random" mask
         mask = cv.imread(str(mask_file), 0)
 
